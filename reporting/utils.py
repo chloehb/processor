@@ -619,7 +619,12 @@ class SeleniumWrapper(object):
         self.browser.execute_script(scroll_script, elem)
 
     def click_error(self, elem, e, attempts=0):
-        logging.info(e)
+        elem_id = elem.get_attribute('id')
+        if elem_id:
+            log_val = elem_id
+        else:
+            log_val = elem
+        logging.info('Element: {}\nError: {}'.format(log_val, e))
         scroll_script = "arguments[0].scrollIntoView();"
         if attempts > 5:
             scroll_script = "window.scrollTo(0, 0)"
@@ -632,7 +637,8 @@ class SeleniumWrapper(object):
 
     def click_on_xpath(self, xpath='', sleep=2, elem=None):
         elem_click = True
-        for x in range(10):
+        attempts = 10
+        for x in range(attempts):
             if not elem:
                 elem = self.browser.find_element_by_xpath(xpath)
             try:
@@ -645,6 +651,10 @@ class SeleniumWrapper(object):
                 break
             else:
                 elem_click = True
+        if not elem_click:
+            tt = attempts * sleep
+            msg = 'Xpath: {} not clicked in {}s'.format(xpath, tt)
+            raise Exception(msg)
         return elem_click
 
     def quit(self):
@@ -764,12 +774,15 @@ class SeleniumWrapper(object):
             time.sleep(5)
         return ads
 
-    def send_keys_wrapper(self, elem, value):
+    def send_keys_wrapper(self, elem, value, elem_xpath=''):
         elem_sent = True
         for x in range(10):
             try:
                 elem.send_keys(value)
-            except ex.ElementNotInteractableException as e:
+            except (ex.ElementNotInteractableException,
+                    ex.StaleElementReferenceException) as e:
+                if elem_xpath:
+                    elem = self.browser.find_element_by_xpath(elem_xpath)
                 elem_sent = self.click_error(elem, e)
             if elem_sent:
                 break
@@ -781,6 +794,18 @@ class SeleniumWrapper(object):
         for item in items:
             self.send_keys_wrapper(elem, item)
             wd.ActionChains(self.browser).send_keys(Keys.TAB).perform()
+
+    def get_elem_type(self, elem_xpath, elem):
+        elem_type = ''
+        for x in range(10):
+            try:
+                elem_type = elem.get_attribute('type')
+                break
+            except ex.StaleElementReferenceException as e:
+                logging.warning(e)
+                elem = self.browser.find_element_by_xpath(elem_xpath)
+                time.sleep(.1)
+        return elem_type
 
     def send_keys_from_list(self, elem_input_list, get_xpath_from_id=True,
                             clear_existing=True, send_escape=True):
@@ -798,15 +823,16 @@ class SeleniumWrapper(object):
                 for clear_x in clear_xs:
                     clear_val = elem.find_elements_by_xpath(clear_x)
                     if len(clear_val) > 0:
-                        self.click_on_xpath(elem=clear_val[0])
+                        self.click_on_xpath(elem=clear_val[0], sleep=.1)
                         break
-            if elem.get_attribute('type') == 'checkbox':
-                self.click_on_xpath(elem=elem)
+            elem_type = self.get_elem_type(elem_xpath, elem)
+            if elem_type == 'checkbox':
+                self.click_on_xpath(elem=elem, sleep=.1)
             else:
                 if type(item[0]) == list:
                     self.send_multiple_keys_wrapper(elem, item[0])
                 else:
-                    self.send_keys_wrapper(elem, item[0])
+                    self.send_keys_wrapper(elem, item[0], elem_xpath)
             if select_xpath in elem_xpath:
                 elem.send_keys(u'\ue007')
                 if send_escape:
@@ -815,7 +841,7 @@ class SeleniumWrapper(object):
 
     def xpath_from_id_and_click(self, elem_id, sleep=2, load_elem_id=''):
         if load_elem_id:
-            sleep = .1
+            sleep = .01
         self.click_on_xpath(self.get_xpath_from_id(elem_id), sleep)
         if load_elem_id:
             self.wait_for_elem_load(load_elem_id)
@@ -824,8 +850,9 @@ class SeleniumWrapper(object):
     def get_xpath_from_id(elem_id):
         return '//*[@id="{}"]'.format(elem_id)
 
-    def wait_for_elem_load(self, elem_id, selector=None, attempts=100,
-                           sleep_time=.05, visible=False):
+    def wait_for_elem_load(self, elem_id, selector=None, attempts=1000,
+                           sleep_time=.01, visible=False, new_value='',
+                           attribute='value'):
         selector = selector if selector else self.select_id
         elem_found = False
         for x in range(attempts):
@@ -838,10 +865,21 @@ class SeleniumWrapper(object):
                     except ex.StaleElementReferenceException:
                         e = self.browser.find_elements(selector, elem_id)
                         elem_visible = e[0].is_displayed()
+                if new_value:
+                    try:
+                        cur_value = e[0].get_attribute(attribute)
+                    except ex.StaleElementReferenceException:
+                        cur_value = ''
+                    if new_value not in cur_value:
+                        elem_visible = False
                 if elem_visible:
                     elem_found = True
                     break
             time.sleep(sleep_time)
+        if not elem_found:
+            tt = attempts * sleep_time
+            msg = 'Element {} not found in {}s.'.format(elem_id, tt)
+            raise Exception(msg)
         return elem_found
 
     def drag_and_drop(self, elem, target):
@@ -1028,6 +1066,24 @@ def get_next_values_from_list(first_list, match_list=None, break_list=None,
     first_list = delimit.join(first_list).split('.')[0].split(',')
     first_list = [x.strip(' ') for x in first_list]
     return first_list
+
+
+def clean_monetary_input(monetary_input):
+    """
+    Remove commas, spaces, dollar signs, and k/m from monetary input values.
+
+    :params monetary_input: Monetary input value to be cleaned
+    :return: Inputted value as string formatted as float
+    """
+    if monetary_input is None:
+        return '0'
+
+    cleaned_input = str(monetary_input).lower()
+    replace = [(',', ''), ('$', ''), (' ', ''), ('k', '000'),
+               ('m', '000000')]
+    for old, new in replace:
+        cleaned_input = cleaned_input.replace(old, new)
+    return cleaned_input
 
 
 class NpEncoder(json.JSONEncoder):
