@@ -1669,7 +1669,7 @@ class CheckAdwordsSplit(AnalyzeBase):
         df = self.aly.matrix.vm_df
         aly_dict = aly_dict.to_dict(orient='records')
         ic = vm.ImportConfig()
-        drop_idx = False
+        drop_idx = np.empty(0)
         for x in aly_dict:
             vk = x[vmc.vendorkey]
             ndf = df[df[vmc.vendorkey] == vk].reset_index(drop=True)
@@ -2895,12 +2895,16 @@ class AliChat(object):
         db_all = db_model.query.all()
         for obj in db_all:
             if obj.name:
+                used_words = []
                 words = utl.lower_words_from_str(obj.name)
                 for word in words:
+                    if word in used_words:
+                        continue
                     if word in word_idx:
                         word_idx[word].append(obj.id)
                     else:
                         word_idx[word] = [obj.id]
+                    used_words.append(word)
         return word_idx
 
     def convert_model_ids_to_message(self, db_model, model_ids, message='',
