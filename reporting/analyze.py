@@ -585,6 +585,10 @@ class Analyze(object):
         metrics = [x for x in metrics if x in df.columns]
         agg_map = {x: [np.min, np.max] if (x == vmc.date) else np.sum
                    for x in metrics}
+        if vmc.vendorkey not in df.columns or not agg_map:
+            msg = '{} not in df could not get metrics'.format(vmc.vendorkey)
+            logging.warning(msg)
+            return False
         df = df.groupby([vmc.vendorkey]).agg(agg_map)
         df.columns = [' - '.join(col).strip() for col in df.columns]
         df.columns = [x[:-6] if x[-6:] == ' - sum' else x for x in df.columns]
@@ -3571,8 +3575,8 @@ class AliChat(object):
 
     @staticmethod
     def get_stop_words():
-        nltk.download('stopwords')
-        nltk.download('wordnet')
+        nltk.download('stopwords', quiet=True)
+        nltk.download('wordnet', quiet=True)
         stop_words = list(nltk.corpus.stopwords.words('english'))
         return stop_words
 

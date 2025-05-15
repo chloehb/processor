@@ -162,7 +162,7 @@ def string_to_date(my_string):
                 logging.warning('Could not parse date: {}'.format(my_string))
                 return pd.NaT
     elif (((len(my_string) == 5) and (my_string[0] == '4')) or
-          ((len(my_string) == 7) and ('.' in my_string))):
+          ((len(my_string) == 7) and (my_string.count('.') == 1))):
         return exceldate_to_datetime(float(my_string))
     elif len(my_string) == 8 and my_string.isdigit() and my_string[0] == '2':
         try:
@@ -170,7 +170,7 @@ def string_to_date(my_string):
         except ValueError:
             logging.warning('Could not parse date: {}'.format(my_string))
             return pd.NaT
-    elif len(my_string) == 8 and '.' in my_string:
+    elif len(my_string) in [7, 8] and '.' in my_string:
         return dt.datetime.strptime(my_string, '%m.%d.%y')
     elif my_string == '0' or my_string == '0.0':
         return pd.NaT
@@ -283,8 +283,8 @@ def first_last_adj(df, first_row, last_row):
     if first_row > 0:
         df.columns = df.loc[first_row - 1]
         df = df.iloc[first_row:]
-    if 0 < last_row < len(df):
-        df = df[:-last_row]
+    if 0 < abs(last_row) < len(df):
+        df = df.iloc[:-abs(last_row)]
     if pd.isnull(df.columns.values).any():
         logging.warning('At least one column name is undefined.  Your first'
                         'row is likely incorrect. For reference the first few'
@@ -959,7 +959,12 @@ class SeleniumWrapper(object):
                     elem = self.send_key_new_value_check(
                         item, get_xpath_from_id, clear_existing, send_escape,
                         elem=elem)
-                elem.send_keys(u'\ue007')
+                for _ in range(3):
+                    try:
+                        elem.send_keys(u'\ue007')
+                        break
+                    except ex.ElementNotInteractableException as e:
+                        logging.warning(e)
                 if send_escape:
                     wd.ActionChains(self.browser).send_keys(
                         Keys.ESCAPE).perform()
