@@ -262,26 +262,55 @@ class TitleScore(Base):
 
 
 class GwiAffinity(Base):
-    """GWI over-indexing fact — audience-keyed, not game-keyed; mirrors
-    ``extract_affinities`` output per (market, gender, base) crosstab."""
+    """One GWI crosstab cell — an item read for one audience cohort.
+    Audience-keyed, not game-keyed; mirrors ``extract_facts`` output.
+
+    One row per (market, gender, base, cohort, category, name): the
+    whole crosstab, not just the over-indexers. Storing only the top
+    affinities answers "what is unusual about them?" and nothing else
+    — penetration questions and the categories that index ~100 by
+    construction (Game Playing Frequency, Session Length) need every
+    cell. ``base`` is the crosstab's audience definition, so an 'All
+    Internet Users' base is the sizing reference, NOT an audience:
+    its denominator is far broader and it outranks every real base if
+    pooled with them.
+    """
     __tablename__ = 'gwi_affinity'
     __table_args__ = (
-        UniqueConstraint('market', 'gender', 'base', 'category', 'name',
-                         name='uq_gwi_affinity_item'),
+        UniqueConstraint('market', 'gender', 'base', 'cohort', 'category',
+                         'name', name='uq_gwi_affinity_item'),
+        Index('ix_gwi_affinity_scope', 'market', 'cohort', 'category'),
+        Index('ix_gwi_affinity_name', 'name'),
         {'schema': 'games',
-         'comment': 'GWI over-indexing fact; audience-keyed, not '
-                    'game-keyed — no gameid by design.'},
+         'comment': 'GWI crosstab cell per audience cohort; '
+                    'audience-keyed, not game-keyed — no gameid by '
+                    'design. One row per item per cohort.'},
     )
 
     gwiaffinityid = Column(BigIntPk, primary_key=True)
     market = Column(Text, nullable=False)
-    # '' (not NULL) for the all-genders/uncategorized cases: NULLs are
-    # distinct in Postgres unique constraints, so a NULL here would let
-    # the natural key admit duplicates.
     gender = Column(Text, nullable=False)
-    base = Column(Text, nullable=False)
+    base = Column(
+        Text, nullable=False,
+        comment="Audience definition, e.g. 'PC Gamer'. An 'All Internet "
+                "Users' base is the sizing reference, not an audience.")
+    cohort = Column(
+        Text, nullable=False, server_default='',
+        comment="Age/gender band, e.g. 'Male 16-34'. Bands overlap "
+                "(16-24, 25-34 and 16-34 all exist) — never rank across "
+                "cohorts, and never sum them.")
     category = Column(Text, nullable=False, server_default='')
     name = Column(Text, nullable=False)
-    peak_index = Column(Numeric)
-    peak_cohort = Column(Text)
+    index_value = Column(
+        Numeric, comment='GWI Index vs the base average; 100 = average.')
+    pct = Column(
+        Numeric,
+        comment='Column % — penetration within the cohort (0-1).')
+    responses = Column(
+        Numeric, comment='Unweighted sample behind the cell.')
+    universe = Column(
+        Numeric, comment='People in the cohort who answered this item.')
+    base_universe = Column(
+        Numeric, comment="Cohort population from the crosstab's Totals "
+                         'row — the audience-size denominator.')
     waves = Column(Text)
